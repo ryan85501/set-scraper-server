@@ -1,7 +1,9 @@
 Flask==2.3.2
+flask-cors
 requests
 beautifulsoup4
 gunicorn
 requests
 beautifulsoup4
+
 
