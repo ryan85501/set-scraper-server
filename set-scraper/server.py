@@ -1,15 +1,23 @@
-# --- Corrected Flask Server Code ---
-# This server is a proxy to scrape data from a website and serve it to the frontend.
-# It now correctly returns 'set_result', 'value', and 'live_result' in the JSON response.
+# --- Corrected Flask Server Code for Render ---
+# This server proxies SET data scraping and serves JSON to the frontend.
 
 from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
-import socket
 
 app = Flask(__name__)
-CORS(app) # This enables CORS for all routes, allowing your HTML to fetch data
+CORS(app)  # Enable CORS for all routes
+
+@app.route("/")
+def home():
+    """Default route for testing"""
+    return {"message": "Flask server is running on Render!"}
+
+@app.route("/health")
+def health():
+    """Health check endpoint for Render"""
+    return {"status": "ok"}
 
 @app.route('/get_set_data', methods=['GET'])
 def get_set_data():
@@ -20,7 +28,7 @@ def get_set_data():
     try:
         url = "https://www.set.or.th/th/market/index/set/overview"
         
-        # Add more headers to mimic a real browser
+        # Mimic a real browser request
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -32,7 +40,7 @@ def get_set_data():
         }
         
         response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()  # Raise an exception for bad status codes
+        response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -44,12 +52,10 @@ def get_set_data():
         value_div = soup.find('span', class_='ms-2 ms-xl-4')
         value = value_div.text.strip() if value_div else "N/A"
         
-        # --- PLACEHOLDER FOR 2D LOTTERY DATA SCRAPING ---
-        # The scraping logic for the live 2D result needs to be added here.
-        # This is currently hardcoded to "N/A".
+        # Placeholder for 2D lottery data scraping
         live_result = "N/A"
         
-        # Return all three pieces of data
+        # Return results
         if set_result != "N/A" and value != "N/A":
             return jsonify({
                 'set_result': set_result,
@@ -65,12 +71,9 @@ def get_set_data():
         return jsonify({'error': 'Failed to connect to the external website.'}), 500
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-        return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
+        return jsonify({'error': f'Unexpected error: {e}'}), 500
+
 
 if __name__ == '__main__':
-    # Get the computer's local IP address
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    print(f"Server will be running on: http://{local_ip}:5000")
-    # This runs the app on your local network, making it accessible from your phone.
+    # Run on Render-compatible settings
     app.run(host='0.0.0.0', port=5000)
