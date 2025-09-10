@@ -1,4 +1,3 @@
-# --- Corrected Flask Server Code ---
 from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
@@ -20,11 +19,9 @@ def get_set_data():
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Scrape SET index
         set_index_div = soup.find('div', class_='value text-white mb-0 me-2 lh-1 stock-info')
         set_result = set_index_div.text.strip() if set_index_div else "N/A"
 
-        # Scrape Value
         value_div = soup.find('span', class_='ms-2 ms-xl-4')
         value = value_div.text.strip() if value_div else "N/A"
 
@@ -41,10 +38,19 @@ def get_set_data():
                 last_digit_set = "0"
 
             # Last digit of integer part of Value
-            integer_part_value = value_clean.split(".")[0]
+            if "." in value_clean:
+                integer_part_value = value_clean.split(".")[0]
+            else:
+                integer_part_value = value_clean
+
             last_digit_value = integer_part_value[-1] if integer_part_value else "0"
 
             live_result = last_digit_set + last_digit_value
+
+            # Debug logging
+            print(f"[DEBUG] set_result={set_result}, value={value}, "
+                  f"last_digit_set={last_digit_set}, last_digit_value={last_digit_value}, "
+                  f"live_result={live_result}")
 
         return jsonify({
             'set_result': set_result,
@@ -60,3 +66,4 @@ if __name__ == '__main__':
     local_ip = socket.gethostbyname(hostname)
     print(f"Server running on: http://{local_ip}:5000")
     app.run(host='0.0.0.0', port=5000)
+
