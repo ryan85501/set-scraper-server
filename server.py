@@ -1,114 +1,90 @@
-# server.py
+# --- Flask Server Code (server.py) ---
+# Scrapes SET Index and Value from SET.or.th and returns JSON for frontend.
+
 from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
 import socket
-import os
-import logging
 
 app = Flask(__name__)
-CORS(app)  # allow browser fetches from other origins
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("set-scraper")
+CORS(app)  # Enable CORS for all routes
 
 
-def text_of(el):
-    return el.get_text(strip=True) if el else None
-
-
-@app.route("/")
-def index():
-    return (
-        "SET scraper server running. Use GET /get_set_data to fetch SET index & value.",
-        200,
-    )
-
-
-@app.route("/get_set_data", methods=["GET"])
+@app.route('/get_set_data', methods=['GET'])
 def get_set_data():
     """
-    Scrape the SET overview page and return:
-      - set_result: the main SET index number (e.g. "1,278.05")
-      - value: the Value (M.Baht) number (e.g. "42,552.94")
-      - live_result: placeholder (you can add lottery scraping later)
+    Scrape SET Index and Value from SET.or.th
+    and return JSON response with calculated live_result.
+    live_result = last digit of decimal part of SET + digit before decimal of Value
     """
-    # Prefer English page (change to /th/ if you want the Thai page)
-    url = "https://www.set.or.th/en/market/index/set/overview"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    }
-
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        logger.exception("Failed to fetch SET page")
-        return jsonify({"error": f"Failed to fetch external page: {str(e)}"}), 502
+        url = "https://www.set.or.th/en/market/index/set/overview"
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/91.0.4472.124 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.google.com/"
+        }
 
-    # 1) Try direct CSS selectors for the main index number
-    # Many SET pages show the main number inside something like:
-    #   <div class="quote-header"> ... <div class="quote-info-left-values"> <div class="value ... stock-info">1,278.05</div>
-    set_el = soup.select_one("div.quote-header div.quote-info-left-values div.value")
-    if not set_el:
-        # fallback: look for an element with both 'value' and 'stock-info' classes
-        set_el = soup.find(
-            lambda t: t.name in ("div", "span")
-            and t.get("class")
-            and ("value" in t.get("class") and "stock-info" in t.get("class"))
-        )
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
 
-    set_result = text_of(set_el) if set_el else None
+        soup = BeautifulSoup(response.text, "html.parser")
 
-    # 2) Find the "Value (M.Baht)" numeric span
-    # The value is often in: <div class="d-block quote-market-cost ..."> ... <span class="ms-2 ms-xl-4">42,552.94</span>
-    value_el = soup.select_one("div.quote-header div.quote-market-cost span")
-    if not value_el:
-        # fallback: try to find the label text "Value" and then grab a nearby span
-        label = soup.find(lambda t: t.string and "Value" in t.get_text())
-        if label:
-            # find first span inside same parent or parent->next elements
-            parent = label.parent
-            if parent:
-                value_el = parent.find("span") or parent.find_next("span")
+        # ✅ Extract SET Index
+        set_index_div = soup.find("div", class_="value text-white mb-0 me-2 lh-1 stock-info")
+        set_result = set_index_div.text.strip() if set_index_div else "N/A"
 
-    value = text_of(value_el) if value_el else None
+        # ✅ Extract Value (M.Baht)
+        value_div = soup.find("span", class_="ms-2 ms-xl-4")
+        value = value_div.text.strip() if value_div else "N/A"
 
-    # normalise whitespace / non-breaking spaces
-    def normalize(s):
-        if not s:
-            return None
-        return s.replace("\xa0", " ").strip()
+        # ✅ Calculate live_result
+        live_result = "N/A"
+        if set_result != "N/A" and value != "N/A":
+            try:
+                # Remove commas
+                set_clean = set_result.replace(",", "")
+                value_clean = value.replace(",", "")
 
-    set_result = normalize(set_result)
-    value = normalize(value)
+                # Last digit of decimal part of SET
+                if "." in set_clean:
+                    decimal_part = set_clean.split(".")[1]
+                    set_last_digit = decimal_part[-1] if decimal_part else "0"
+                else:
+                    set_last_digit = set_clean[-1]
 
-    # live_result placeholder — add your own scraping logic for lottery results here
-    live_result = "N/A"
+                # Digit before decimal of Value
+                if "." in value_clean:
+                    integer_part = value_clean.split(".")[0]
+                    value_before_decimal = integer_part[-1] if integer_part else "0"
+                else:
+                    value_before_decimal = value_clean[-1]
 
-    # If both are missing, return an error so you'll see it in the logs
-    if (not set_result) and (not value):
-        logger.warning("Could not find set_result or value; returning error")
-        return jsonify({"error": "Couldn't locate expected data on the page"}), 500
+                live_result = set_last_digit + value_before_decimal
+            except Exception as calc_err:
+                print(f"Error calculating live_result: {calc_err}")
+                live_result = "N/A"
 
-    return jsonify({"set_result": set_result or "N/A", "value": value or "N/A", "live_result": live_result})
+        return jsonify({
+            "set_result": set_result,
+            "value": value,
+            "live_result": live_result
+        })
+
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return jsonify({"error": "Failed to connect to the external website."}), 500
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
 
 
-if __name__ == "__main__":
-    # Print local IP for convenience when running locally
-    try:
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
-        logger.info(f"Server will be running on: http://{local_ip}:5000 (or http://127.0.0.1:5000)")
-    except Exception:
-        logger.info("Could not determine local IP")
-
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    print(f"Server running on: http://{local_ip}:5000")
+    app.run(host='0.0.0.0', port=5000)
