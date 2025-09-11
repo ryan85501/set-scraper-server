@@ -22,25 +22,13 @@ def get_set_data():
         soup = BeautifulSoup(response.text, 'html.parser')
 
         # --- SET Result (Index value) ---
-        set_result_element = soup.find('p', string='SET Index')
-        set_result = "N/A"
-        if set_result_element:
-            set_index_div = set_result_element.find_next_sibling('div')
-            if set_index_div:
-                set_result_value = set_index_div.find('div', class_='text-white')
-                if set_result_value:
-                    set_result = set_result_value.text.strip().replace(",", "")
+        set_index_div = soup.find('div', class_='value text-white mb-0 me-2 lh-1 stock-info')
+        set_result = set_index_div.text.strip().replace(",", "") if set_index_div else "N/A"
 
         # --- Value (M.Baht) ---
-        value_element = soup.find('p', string='Value (M.Baht)')
-        value = "N/A"
-        if value_element:
-            value_div = value_element.find_next_sibling('div')
-            if value_div:
-                value_span = value_div.find('div', class_='text-white')
-                if value_span:
-                    value = value_span.text.strip().replace(",", "")
-                    
+        value_span = soup.find('span', class_='ms-2 ms-xl-4')
+        value = value_span.text.strip().replace(",", "") if value_span else "N/A"
+
         # --- Live Result Calculation ---
         if set_result != "N/A" and value != "N/A":
             # last digit of SET (include decimals, e.g. 1278.05 -> 5)
@@ -66,3 +54,5 @@ def get_set_data():
 if __name__ == '__main__':
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
+    print(f"Server will be running on: http://{local_ip}:5000")
+    app.run(host='0.0.0.0', port=5000)
