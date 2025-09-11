@@ -78,4 +78,5 @@ def get_set_data():
     evening_start = now.replace(hour=15, minute=30, second=0, microsecond=0)
     evening_end = now.replace(hour=16, minute=30, second=0, microsecond=0)
 
-    in_morning = morning_start <= now <= morning
+    in_morning = morning_start <= now <= morning_end
+
