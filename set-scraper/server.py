@@ -1,3 +1,6 @@
+# --- Corrected Flask Server Code ---
+# This server scrapes SET.or.th and calculates live_result properly.
+
 from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
@@ -5,7 +8,7 @@ from bs4 import BeautifulSoup
 import socket
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Allow frontend to call this API
 
 @app.route('/get_set_data', methods=['GET'])
 def get_set_data():
@@ -18,32 +21,33 @@ def get_set_data():
 
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # --- SET Result (Index value) ---
+        # --- Scrape SET index ---
         set_index_div = soup.find('div', class_='value text-white mb-0 me-2 lh-1 stock-info')
         set_result = set_index_div.text.strip().replace(",", "") if set_index_div else "N/A"
 
-        # --- Value (M.Baht) ---
-        value_span = soup.find('span', class_='ms-2 ms-xl-4')
-        value = value_span.text.strip().replace(",", "") if value_span else "N/A"
+        # --- Scrape Value (M.Baht) ---
+        value_div = soup.find('div', class_='d-block quote-market-value ps-2 ps-xl-3')
+        value = value_div.text.strip().replace(",", "") if value_div else "N/A"
 
-        # --- Live Result Calculation ---
+        # --- Compute live_result ---
         if set_result != "N/A" and value != "N/A":
-            # last digit of SET (including decimals)
-            last_digit_set = set_result[-1]
+            try:
+                # Last digit of SET result (including decimals)
+                last_digit_set = set_result[-1]
 
-            # remove decimals from value and pick last digit
-            value_int_part = value.split(".")[0]
-            last_digit_value = value_int_part[-1]
+                # Last digit of value (ignore decimals, take integer part)
+                value_int = value.split(".")[0]
+                last_digit_value = value_int[-1]
 
-            live_result = last_digit_set + last_digit_value
+                live_result = last_digit_set + last_digit_value
+
+            except Exception as e:
+                print(f"[ERROR] Live result calculation failed: {e}")
+                live_result = "N/A"
         else:
             live_result = "N/A"
-
-        # DEBUG LOGGING for Render logs
-        print(f"[DEBUG] set_result={set_result}, value={value}, last_digit_set={last_digit_set}, last_digit_value={last_digit_value}, live_result={live_result}")
 
         return jsonify({
             'set_result': set_result,
@@ -51,12 +55,16 @@ def get_set_data():
             'live_result': live_result
         })
 
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return jsonify({'error': 'Failed to connect to the external website.'}), 500
     except Exception as e:
-        print(f"[ERROR] {e}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Unexpected error: {e}")
+        return jsonify({'error': f'Unexpected error: {e}'}), 500
+
 
 if __name__ == '__main__':
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    print(f"Server will be running on: http://{local_ip}:5000")
+    print(f"Server running on: http://{local_ip}:5000")
     app.run(host='0.0.0.0', port=5000)
