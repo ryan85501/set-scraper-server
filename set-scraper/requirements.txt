@@ -4,6 +4,7 @@ requests
 beautifulsoup4
 gunicorn
 beautifulsoup4
+requests-html
 
 
 
