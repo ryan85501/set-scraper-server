@@ -1,124 +1,126 @@
-# --- Flask Server with SET Scraper and Official Result Logic ---
+# --- Corrected Flask Server Code with Frozen Time ---
 from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, time
-from zoneinfo import ZoneInfo
+import pytz
+from datetime import datetime, time as dtime
 
 app = Flask(__name__)
 CORS(app)
 
-# Timezone: Myanmar (Yangon)
-YANGON_TZ = ZoneInfo("Asia/Yangon")
+# Store last official snapshot (result + time)
+last_official_data = {
+    "set_result": None,
+    "value": None,
+    "live_result": None,
+    "time": None
+}
 
-# Store official result
-official_result = None
-official_timestamp = None
+# Myanmar Timezone
+yangon_tz = pytz.timezone("Asia/Yangon")
 
+def is_within_trading_hours(now):
+    """Check if current Myanmar time is within trading windows."""
+    # Monday = 0, Sunday = 6
+    if now.weekday() >= 5:  # Saturday or Sunday
+        return False
 
+    morning_start = dtime(11, 30)
+    morning_end = dtime(12, 1)
+    afternoon_start = dtime(15, 30)
+    afternoon_end = dtime(16, 30)
+
+    return (morning_start <= now.time() <= morning_end) or \
+           (afternoon_start <= now.time() <= afternoon_end)
+
+@app.route('/get_set_data', methods=['GET'])
 def get_set_data():
-    """
-    Scrapes SET index and value from set.or.th and computes live_result.
-    """
+    global last_official_data
+
+    now = datetime.now(yangon_tz)
+
+    # If not trading time, return last official frozen data
+    if not is_within_trading_hours(now):
+        if last_official_data["set_result"]:
+            return jsonify(last_official_data)
+        else:
+            return jsonify({"error": "No official data yet"}), 503
+
     try:
         url = "https://www.set.or.th/en/market/index/set/overview"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.google.com/',
+            'Referer': 'https://www.google.com/'
         }
-
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
 
-        # --- Get SET Index ---
-        set_index_div = soup.find("div", class_="value text-white mb-0 me-2 lh-1 stock-info")
-        set_result = set_index_div.text.strip().replace(",", "") if set_index_div else "N/A"
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-        # --- Get Value (M.Baht) ---
-        value_span = soup.select_one("div.d-block.quote-market-cost.ps-2.ps-xl-3 span.ms-2.ms-xl-4")
-        value = value_span.text.strip().replace(",", "") if value_span else "N/A"
+        # --- SET Index ---
+        set_index_div = soup.find('div', class_='value text-white mb-0 me-2 lh-1 stock-info')
+        set_result = set_index_div.text.strip().replace(",", "") if set_index_div else None
 
-        live_result = "N/A"
-        if set_result != "N/A" and value != "N/A":
-            # Get last digit from SET (including decimals)
-            last_digit_set = set_result.replace(".", "")[-1]
+        # --- Value (M.Baht) ---
+        value_span = soup.find("div", class_="d-block quote-market-cost ps-2 ps-xl-3") \
+                         .find("span", class_="ms-2 ms-xl-4")
+        value = value_span.text.strip().replace(",", "") if value_span else None
 
-            # Get last digit from value (ignore decimals)
-            value_int_part = value.split(".")[0] if "." in value else value
-            last_digit_value = value_int_part[-1]
+        # --- Compute live_result ---
+        live_result = None
+        if set_result and value:
+            try:
+                # Last digit of set_result (include decimals)
+                last_digit_set = set_result[-1]
 
-            # Combine
-            live_result = last_digit_set + last_digit_value
+                # Remove decimals in value and pick last digit
+                value_no_decimal = value.split(".")[0]
+                last_digit_value = value_no_decimal[-1]
 
-        return set_result, value, live_result
+                live_result = last_digit_set + last_digit_value
+            except Exception:
+                live_result = None
+
+        # --- Time snapshot ---
+        current_time = now.strftime("%I:%M %p")  # e.g., "11:45 AM"
+
+        # If we're at freeze cutoff -> store official data
+        if now.time() >= dtime(12, 1) and now.time() < dtime(15, 30):
+            # Freeze at 12:01 PM
+            if live_result:
+                last_official_data = {
+                    "set_result": set_result,
+                    "value": value,
+                    "live_result": live_result,
+                    "time": "12:01 PM"
+                }
+        elif now.time() >= dtime(16, 30):
+            # Freeze at 4:30 PM
+            if live_result:
+                last_official_data = {
+                    "set_result": set_result,
+                    "value": value,
+                    "live_result": live_result,
+                    "time": "04:30 PM"
+                }
+        else:
+            # Normal trading → update live
+            if live_result:
+                last_official_data = {
+                    "set_result": set_result,
+                    "value": value,
+                    "live_result": live_result,
+                    "time": current_time
+                }
+
+        return jsonify(last_official_data)
 
     except Exception as e:
-        print(f"[ERROR] Failed to fetch data: {e}")
-        return "N/A", "N/A", "N/A"
+        print(f"Error: {e}")
+        return jsonify({"error": "Failed to fetch data"}), 500
 
 
-def is_trading_day():
-    """Check if today is Monday–Friday."""
-    today = datetime.now(YANGON_TZ).weekday()
-    return today < 5  # 0 = Monday, 4 = Friday
-
-
-def in_trading_session(now):
-    """Check if current Yangon time is within trading sessions."""
-    morning_start, morning_end = time(11, 30), time(12, 1)
-    afternoon_start, afternoon_end = time(15, 30), time(16, 30)
-
-    if morning_start <= now.time() <= morning_end:
-        return "morning"
-    elif afternoon_start <= now.time() <= afternoon_end:
-        return "afternoon"
-    return None
-
-
-@app.route("/get_set_data", methods=["GET"])
-def get_set_data_route():
-    global official_result, official_timestamp
-
-    now = datetime.now(YANGON_TZ)
-    session = in_trading_session(now)
-
-    # Display current Yangon time
-    current_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-
-    if not is_trading_day():
-        return jsonify({
-            "error": "Market Closed (Weekend)",
-            "current_time": current_time_str,
-            "set_result": "N/A",
-            "value": "N/A",
-            "live_result": "N/A",
-            "official_result": official_result,
-            "official_timestamp": official_timestamp
-        })
-
-    set_result, value, live_result = get_set_data()
-
-    if session:
-        # Live session → update live result
-        official_result = live_result
-        official_timestamp = current_time_str
-    else:
-        # Outside session → keep static official result
-        live_result = official_result
-
-    return jsonify({
-        "current_time": current_time_str,
-        "set_result": set_result,
-        "value": value,
-        "live_result": live_result,
-        "official_result": official_result,
-        "official_timestamp": official_timestamp
-    })
-
-
-if __name__ == "__main__":
-    print("Flask server running with Myanmar (Yangon) timezone")
-    app.run(host="0.0.0.0", port=5000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
