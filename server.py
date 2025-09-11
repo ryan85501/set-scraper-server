@@ -79,4 +79,39 @@ def get_set_data():
     evening_end = now.replace(hour=16, minute=30, second=0, microsecond=0)
 
     in_morning = morning_start <= now <= morning_end
+    in_evening = evening_start <= now <= evening_end
 
+    try:
+        if in_morning or in_evening:
+            # Live trading → fetch fresh data
+            set_result, value = fetch_set_data()
+
+            if set_result and value:
+                live_result = calculate_live_result(set_result, value)
+
+                last_official_data = {
+                    "set_result": set_result,
+                    "value": value,
+                    "live_result": live_result,
+                    "time": current_time,
+                }
+                return jsonify(last_official_data)
+
+        # Outside trading → return last frozen result
+        if last_official_data:
+            return jsonify(last_official_data)
+
+        # If no frozen data yet
+        return jsonify({"error": "No official data yet"})
+
+    except Exception as e:
+        if last_official_data:
+            return jsonify(last_official_data)
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    print(f"Server running on: http://{local_ip}:5000")
+    app.run(host="0.0.0.0", port=5000)
