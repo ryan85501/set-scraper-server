@@ -23,14 +23,18 @@ def get_set_data():
         set_index_div = soup.find('div', class_='value text-white mb-0 me-2 lh-1 stock-info')
         set_result = set_index_div.text.strip().replace(",", "") if set_index_div else "N/A"
 
-        # --- Scrape Value (M.Baht) ---
-        value_span = soup.find('span', class_='ms-2 ms-xl-4')
-        value = value_span.text.strip().replace(",", "") if value_span else "N/A"
+        # --- Scrape Value (M.Baht) safely inside its parent div ---
+        value_container = soup.find('div', class_='d-block quote-market-cost ps-2 ps-xl-3')
+        value = "N/A"
+        if value_container:
+            value_span = value_container.find('span', class_='ms-2 ms-xl-4')
+            if value_span:
+                value = value_span.text.strip().replace(",", "")
 
         # --- Compute live_result ---
         if set_result != "N/A" and value != "N/A":
             try:
-                last_digit_set = set_result[-1]   # last digit of SET (including decimals)
+                last_digit_set = set_result[-1]   # last digit of full SET (including decimals)
                 value_int = value.split(".")[0]   # take integer part only
                 last_digit_value = value_int[-1]  # last digit of integer part
                 live_result = last_digit_set + last_digit_value
@@ -39,6 +43,9 @@ def get_set_data():
                 live_result = "N/A"
         else:
             live_result = "N/A"
+
+        # Debug log for Render
+        print(f"[DEBUG] set_result={set_result}, value={value}, live_result={live_result}")
 
         return jsonify({
             'set_result': set_result,
