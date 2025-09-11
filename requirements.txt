@@ -6,6 +6,8 @@ gunicorn
 beautifulsoup4
 requests-html
 lxml_html_clean
+pytz
+
 
 
 
