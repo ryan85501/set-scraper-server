@@ -1,6 +1,3 @@
-# --- Corrected Flask Server Code ---
-# This server scrapes SET.or.th and calculates live_result properly.
-
 from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
@@ -8,13 +5,12 @@ from bs4 import BeautifulSoup
 import socket
 
 app = Flask(__name__)
-CORS(app)  # Allow frontend to call this API
+CORS(app)
 
 @app.route('/get_set_data', methods=['GET'])
 def get_set_data():
     try:
         url = "https://www.set.or.th/en/market/index/set/overview"
-
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
@@ -23,26 +19,21 @@ def get_set_data():
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # --- Scrape SET index ---
+        # --- Scrape SET Index ---
         set_index_div = soup.find('div', class_='value text-white mb-0 me-2 lh-1 stock-info')
         set_result = set_index_div.text.strip().replace(",", "") if set_index_div else "N/A"
 
-        # --- Scrape Value (M.Baht) ---
-        value_div = soup.find('div', class_='d-block quote-market-value ps-2 ps-xl-3')
+        # --- Scrape Value (M.Baht) with flexible match ---
+        value_div = soup.find('div', class_=lambda c: c and "quote-market-value" in c)
         value = value_div.text.strip().replace(",", "") if value_div else "N/A"
 
         # --- Compute live_result ---
         if set_result != "N/A" and value != "N/A":
             try:
-                # Last digit of SET result (including decimals)
-                last_digit_set = set_result[-1]
-
-                # Last digit of value (ignore decimals, take integer part)
-                value_int = value.split(".")[0]
-                last_digit_value = value_int[-1]
-
+                last_digit_set = set_result[-1]   # last digit from full SET index
+                value_int = value.split(".")[0]   # take only integer part
+                last_digit_value = value_int[-1]  # last digit of integer
                 live_result = last_digit_set + last_digit_value
-
             except Exception as e:
                 print(f"[ERROR] Live result calculation failed: {e}")
                 live_result = "N/A"
