@@ -31,16 +31,19 @@ def get_set_data():
 
         # --- Live Result Calculation ---
         if set_result != "N/A" and value != "N/A":
-            # last digit of SET (include decimals, e.g. 1278.05 -> 5)
+            # last digit of SET (including decimals)
             last_digit_set = set_result[-1]
 
-            # remove decimals from value and pick last digit (e.g. 42552.94 -> 42552 -> 2)
+            # remove decimals from value and pick last digit
             value_int_part = value.split(".")[0]
             last_digit_value = value_int_part[-1]
 
             live_result = last_digit_set + last_digit_value
         else:
             live_result = "N/A"
+
+        # DEBUG LOGGING for Render logs
+        print(f"[DEBUG] set_result={set_result}, value={value}, last_digit_set={last_digit_set}, last_digit_value={last_digit_value}, live_result={live_result}")
 
         return jsonify({
             'set_result': set_result,
@@ -49,6 +52,7 @@ def get_set_data():
         })
 
     except Exception as e:
+        print(f"[ERROR] {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
