@@ -23,16 +23,16 @@ def get_set_data():
         set_index_div = soup.find('div', class_='value text-white mb-0 me-2 lh-1 stock-info')
         set_result = set_index_div.text.strip().replace(",", "") if set_index_div else "N/A"
 
-        # --- Scrape Value (M.Baht) with flexible match ---
-        value_div = soup.find('div', class_=lambda c: c and "quote-market-value" in c)
-        value = value_div.text.strip().replace(",", "") if value_div else "N/A"
+        # --- Scrape Value (M.Baht) ---
+        value_span = soup.find('span', class_='ms-2 ms-xl-4')
+        value = value_span.text.strip().replace(",", "") if value_span else "N/A"
 
         # --- Compute live_result ---
         if set_result != "N/A" and value != "N/A":
             try:
-                last_digit_set = set_result[-1]   # last digit from full SET index
-                value_int = value.split(".")[0]   # take only integer part
-                last_digit_value = value_int[-1]  # last digit of integer
+                last_digit_set = set_result[-1]   # last digit of SET (including decimals)
+                value_int = value.split(".")[0]   # take integer part only
+                last_digit_value = value_int[-1]  # last digit of integer part
                 live_result = last_digit_set + last_digit_value
             except Exception as e:
                 print(f"[ERROR] Live result calculation failed: {e}")
