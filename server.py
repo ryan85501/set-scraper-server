@@ -1,55 +1,117 @@
+# --- Flask Server for SET Scraping with Frozen Results ---
+from flask import Flask, jsonify
+from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
-import re
+import socket
+from datetime import datetime
+import pytz
 
-def scrape_set_index():
+app = Flask(__name__)
+CORS(app)
+
+# Store the last official data
+last_official_data = None  
+
+# Myanmar TimeZone
+myanmar_tz = pytz.timezone("Asia/Yangon")
+
+
+def fetch_set_data():
     """
-    Scrapes the current SET Index value from the set.or.th website.
-
-    This script targets the specific HTML element containing the market value
-    and cleans the data to ensure it is in the correct numerical format.
+    Scrape the SET website to get SET Index and Value.
     """
     url = "https://www.set.or.th/en/market/index/set/overview"
-
-    # Define headers to mimic a web browser request, which can help prevent some blocks.
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     }
 
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # Get SET Index
+    set_div = soup.find("div", class_="value text-white mb-0 me-2 lh-1 stock-info")
+    set_result = set_div.text.strip().replace(",", "") if set_div else None
+
+    # Get Value (Baht)
+    value_span = soup.find("span", class_="ms-2 ms-xl-4")
+    value = value_span.text.strip().replace(",", "") if value_span else None
+
+    if not set_result or not value:
+        return None, None
+
+    return set_result, value
+
+
+def calculate_live_result(set_result, value):
+    """
+    Calculate live_result using:
+    - last digit of set_result (including decimals)
+    - last digit of value (integer part only, no decimals)
+    """
     try:
-        # Fetch the HTML content of the page
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+        # last digit of SET
+        set_str = set_result.replace(",", "")
+        last_digit_set = set_str[-1]
 
-        # Parse the HTML content using BeautifulSoup
-        soup = BeautifulSoup(response.content, "html.parser")
+        # last digit of Value (ignore decimals)
+        value_str = value.split(".")[0].replace(",", "")
+        last_digit_value = value_str[-1]
 
-        # Find the specific span element that contains the market value.
-        # Based on the HTML you provided, the value is in a span with a specific class.
-        market_value_element = soup.find("span", class_="quote-market-value")
-
-        if market_value_element:
-            # Extract the text from the element
-            market_value_text = market_value_element.text.strip()
-            print(f"Raw text extracted: '{market_value_text}'")
-
-            # Clean the text: remove commas and other non-digit, non-decimal characters.
-            # This is a crucial step to correctly convert the string to a number.
-            cleaned_value = re.sub(r'[^\d.]', '', market_value_text.replace(',', ''))
-            
-            # Convert the cleaned string to a float
-            set_index_value = float(cleaned_value)
-            
-            print(f"The current SET Index value is: {set_index_value}")
-            return set_index_value
-        else:
-            print("Could not find the element with class 'quote-market-value'.")
-            print("The website's HTML structure may have changed.")
-            return None
-
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred while fetching the page: {e}")
+        return last_digit_set + last_digit_value
+    except Exception:
         return None
 
+
+@app.route("/get_set_data", methods=["GET"])
+def get_set_data():
+    global last_official_data
+
+    now = datetime.now(myanmar_tz)
+    current_time = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Trading windows (Myanmar time)
+    morning_start = now.replace(hour=11, minute=30, second=0, microsecond=0)
+    morning_end = now.replace(hour=12, minute=1, second=0, microsecond=0)
+    evening_start = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    evening_end = now.replace(hour=16, minute=30, second=0, microsecond=0)
+
+    in_morning = morning_start <= now <= morning_end
+    in_evening = evening_start <= now <= evening_end
+
+    try:
+        if in_morning or in_evening:
+            # Live trading → fetch fresh data
+            set_result, value = fetch_set_data()
+
+            if set_result and value:
+                live_result = calculate_live_result(set_result, value)
+
+                last_official_data = {
+                    "set_result": set_result,
+                    "value": value,
+                    "live_result": live_result,
+                    "time": current_time,
+                }
+                return jsonify(last_official_data)
+
+        # Outside trading → return last frozen result
+        if last_official_data:
+            return jsonify(last_official_data)
+
+        # If no frozen data yet
+        return jsonify({"error": "No official data yet"})
+
+    except Exception as e:
+        if last_official_data:
+            return jsonify(last_official_data)
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
-    scrape_set_index()
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    print(f"Server running on: http://{local_ip}:5000")
+    app.run(host="0.0.0.0", port=5000)
