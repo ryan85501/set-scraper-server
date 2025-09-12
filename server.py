@@ -23,26 +23,32 @@ def fetch_set_data():
     """
     url = "https://www.set.or.th/en/market/index/set/overview"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/91.0.4472.124 Safari/537.36",
     }
 
     response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
-
     soup = BeautifulSoup(response.text, "html.parser")
 
     # Get SET Index
     set_div = soup.find("div", class_="value text-white mb-0 me-2 lh-1 stock-info")
     set_result = set_div.text.strip().replace(",", "") if set_div else None
 
-    # Get Value (Baht)
-    value_span = soup.find("span", class_="ms-2 ms-xl-4")
-    value = value_span.text.strip().replace(",", "") if value_span else None
+    # Find "Value (M.Baht)" label and extract the number after it
+    value_label = soup.find(string=lambda text: text and "Value (M.Baht)" in text)
+    value = None
+    if value_label:
+        value_span = value_label.find_next("span")
+        if value_span:
+            value = value_span.text.strip().replace(",", "")
 
     if not set_result or not value:
         return None, None
 
     return set_result, value
+
 
 
 def calculate_live_result(set_result, value):
@@ -90,9 +96,9 @@ def get_set_data():
                 live_result = calculate_live_result(set_result, value)
 
                 last_official_data = {
-                    "set_result": set_result,
-                    "value": value,
-                    "live_result": live_result,
+                    "set_result": "1293.62",   # Initial SET Index
+                     "value": "38576.94",       # Initial Value (no commas)
+                     "live_result": "22",       # Example initial 2D result (calculated manually)
                     "time": current_time,
                 }
                 return jsonify(last_official_data)
@@ -115,3 +121,4 @@ if __name__ == "__main__":
     local_ip = socket.gethostbyname(hostname)
     print(f"Server running on: http://{local_ip}:5000")
     app.run(host="0.0.0.0", port=5000)
+
