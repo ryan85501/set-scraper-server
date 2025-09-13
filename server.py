@@ -108,7 +108,7 @@ def get_set_data():
             return jsonify(last_official_data)
 
         # If no frozen data yet
-        return jsonify({""set_result": "1293.62",
+        return jsonify({"set_result": "1293.62",
             "value": "38576.94",
             "live_result": "26",
             "time": "2025-09-12 16:30:13"})
@@ -124,5 +124,6 @@ if __name__ == "__main__":
     local_ip = socket.gethostbyname(hostname)
     print(f"Server running on: http://{local_ip}:5000")
     app.run(host="0.0.0.0", port=5000)
+
 
 
